@@ -1,6 +1,13 @@
-6ea5188 (HEAD -> dev) add reathor notebook connecting all resources we have , prompts and data
+4040b89 (HEAD -> dev, origin/dev) add version two of realthor working with updated prompts
+b652480 add readme file
+b377c35 add evaluation dataset and evaluation notebook
+a912f05 add and test new prompts
+794bb54 add langchain dependecies
+7eec510 add data for evaluations and promt version two for eveluation
+b977af0 add git logs file using command git log --oneline
+6ea5188 add reathor notebook connecting all resources we have , prompts and data
 fca174f add env example
-00a4c36 (origin/dev) rearange folder inside the project
+00a4c36 rearange folder inside the project
 fbef39c add data
 d969823 initialize the uv project & adding the dependencies
 4570b8c (origin/main, origin/HEAD, main) Initial commit
