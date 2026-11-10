@@ -1,0 +1,6 @@
+6ea5188 (HEAD -> dev) add reathor notebook connecting all resources we have , prompts and data
+fca174f add env example
+00a4c36 (origin/dev) rearange folder inside the project
+fbef39c add data
+d969823 initialize the uv project & adding the dependencies
+4570b8c (origin/main, origin/HEAD, main) Initial commit
