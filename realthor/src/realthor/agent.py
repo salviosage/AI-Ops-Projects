@@ -11,13 +11,11 @@ load_dotenv()
 
 def build_agent(config_path: str = "config.yaml"):
     cfg = resolve_paths(load_config(config_path), config_path)
-    print(f"Using config: {cfg}")
     model = make_chat_model(cfg)
     system_prompt = load_prompt(cfg["paths"]["prompt"])
     demand = pd.read_csv(cfg["paths"]["demand_data"])
     supply = pd.read_csv(cfg["paths"]["supply_data"])
     tools = make_tools(demand, supply)
-    print(f"Loaded {len(tools)} tools: {[t.name for t in tools]}")
     return create_agent(model=model, tools=tools, system_prompt=system_prompt)
 
 
