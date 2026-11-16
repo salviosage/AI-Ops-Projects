@@ -1,4 +1,12 @@
-4040b89 (HEAD -> dev, origin/dev) add version two of realthor working with updated prompts
+acfa830 (HEAD -> dev) add test
+ee306c9 (origin/dev) add docker files
+cab3f2b add reathor intelligent cli agent
+423fb1d click to build command line tool
+1cebba8 add reathor tools helper functions
+f3685e4 add config helpr functions
+35f4672 Add configuration file to locate the prompts model and data
+2118c9a add gitlog file
+4040b89 add version two of realthor working with updated prompts
 b652480 add readme file
 b377c35 add evaluation dataset and evaluation notebook
 a912f05 add and test new prompts

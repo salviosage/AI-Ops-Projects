@@ -1,6 +1,6 @@
 # RealThor
 
-Listing Supply Intelligence agent for Ciudaty PropTech — v0.2 with structured output, versioned prompts, and an evaluation suite.
+Listing Supply Intelligence agent for Ciudaty PropTech.
 
 ## Setup
 
@@ -9,118 +9,161 @@ uv sync
 cp .env.example .env   # set LLM_PROVIDER + its key (Vocareum by default)
 ```
 
-Then launch Jupyter:
+## What changed from v0.2
+
+v0.2 was a notebook with an evaluation suite. v0.3 is a deployable system:
+
+- RealThor is an installed package with a `src/` layout and a `realthor` CLI (`[project.scripts]`).
+- The agent is built with LangChain's `create_agent`, wiring the model, the versioned prompt, and the data tools.
+- It ships as a Docker image, so the same command runs locally and in a container.
+
+## On-Demand Analysis
 
 ```bash
-uv run jupyter notebook
+uv run realthor analyze --region west --property-type apartment --bedrooms 2
 ```
 
-## What Changed from v0.1
+## Tests and Evaluation
 
-v0.1 (`realthor_v01.ipynb`) returns free-form text — the model writes a recommendation in natural language. That works for humans reading the output, but it breaks downstream automation: you can't reliably extract `priority` or `recommended_action` from an unstructured string.
-
-v0.2 (`realthor_v02.ipynb`) uses LangChain's `with_structured_output()` to force the model to return a validated Pydantic object:
-
-```python
-class ListingRecommendation(BaseModel):
-    priority: Literal["high", "medium", "low"]
-    demand_reasoning: str
-    supply_reasoning: str
-    recommended_action: Literal["prioritize_new_listings", "monitor_opportunity", "deprioritize"]
-    confidence: Literal["high", "medium", "low"]
+```bash
+sh ops.sh
 ```
 
-The model still reasons in natural language — it now just returns that reasoning in a structured envelope. This makes the output machine-readable without losing interpretability.
+Runs unit tests (`tests/`), the evaluation suite (`evaluation/run_eval.py`) against 5 scenarios, and — in the solution — builds and runs the Docker container as the CD step.
 
-## Prompt Versioning
-
-Three prompt versions live in `prompts/`:
-
-| Version | File | What it does |
-|---|---|---|
-| v1 | `system_prompt_v1.md` | Baseline — minimal instructions, no guardrails |
-| v2 | `system_prompt_v2.md` | Adds qualitative constraint ("be conservative") — introduces regressions |
-| v3 | `system_prompt_v3.md` | Candidate — replaces vague language with numeric thresholds |
-
-Prompts are versioned files, not inline strings, so every change is tracked in git and every evaluation run references an explicit version. This is the foundation of prompt engineering discipline: you can always re-run any version against the full dataset and compare.
-
-The key lesson from v1 → v2 → v3: qualitative instructions like "be conservative" are ambiguous. The model interprets them differently across scenarios. Replacing them with explicit numeric rules (`if demand_score > 0.75 and supply_score < 0.45`) makes behavior predictable and testable.
-
-## Evaluation
-
-### Golden Dataset
-
-`evaluation/eval_golden_dataset.csv` contains 20 Ciudaty scenarios — each with a region, property type, bedroom count, expected priority, expected action, and a rationale explaining the human judgment:
-
-```
-G001,west,apartment,2,high,prioritize_new_listings,demand=0.91 supply=0.22 — strongest demand in dataset...
-G002,north,apartment,1,low,deprioritize,demand=0.54 supply=0.81 — moderate demand but heavily oversupplied...
-```
-
-The dataset covers all five regions, all three property types, and a spread of demand/supply combinations — including edge cases where signals are close (borderline `medium`) and clear outliers at both extremes.
-
-### Evaluation Notebook
-
-`evaluation/evaluate.ipynb` runs all three prompt versions against all 20 scenarios and compares them. The evaluation flow:
-
-1. **`ask_realthor(region, property_type, bedrooms, prompt)`** — calls the structured LLM and returns a `ListingRecommendation`
-2. **`evaluate_output(result, row)`** — checks `result.priority == expected_priority` and `result.recommended_action == expected_action`; returns pass/fail + failure reason
-3. **Evaluation loop** — iterates all 20 scenarios × 3 prompt versions; builds `results_df`
-4. **Summary table** — groups by `prompt_version`, computes pass rate per version
-5. **Decision gate** — applies two ship conditions per candidate version (v2, v3)
-
-### Decision Gate
-
-A prompt version ships only if it passes both conditions against the baseline (v1):
-
-```
-1. No regressions — it must not fail any scenario that v1 passed
-2. ≥ 10pp improvement — pass_rate(candidate) >= pass_rate(v1) + 0.10
-```
-
-The gate outputs one of:
-
-```
-Ship v3.
-Ship v2.
-Do not ship. Keep v1.
-```
-
-If v3 is rejected, the failure reasons in `results_df` tell you exactly which scenarios failed and why — use them to iterate on the prompt.
-
-### Running the Evaluation
-
-Open `evaluate.ipynb` and run all cells. Expected output:
-
-- A per-scenario results table (20 rows × 3 prompt versions = 60 rows) with `passed`, `priority`, `action`, `failure_reason`
-- A summary table with pass rate per version — v2 should underperform v1 on some scenarios; v3 should exceed v1 by at least 10pp
-- A printed shipping decision
-
-## Project Structure
+## Project structure
 
 ```
 realthor/
-├── pyproject.toml              ← deps: langchain, langchain-openai, ipykernel, pandas
-├── .python-version             ← Python 3.12
-├── .env.example                ← copy to .env, set LLM_PROVIDER + its key
-├── data/
-│   ├── demand_signals.csv      ← demand index per region/type/bedrooms
-│   └── supply_snapshot.csv     ← active listing counts per segment
-├── prompts/
-│   ├── system_prompt_v1.md     ← baseline (do not modify)
-│   ├── system_prompt_v2.md     ← first candidate (pre-written, introduces regressions)
-│   └── system_prompt_v3.md     ← your improved prompt
-├── evaluation/
-│   ├── eval_golden_dataset.csv ← 20 scenarios with expected outputs
-│   └── evaluate.ipynb          ← evaluation suite
-├── realthor_v01.ipynb          ← free-form output reference
-└── realthor_v02.ipynb          ← structured output reference
+├── pyproject.toml          # build-system, deps, `realthor` entry point
+├── config.yaml             # model + file paths
+├── ops.sh                  # CI + CD (tests, eval, Docker build/run)
+├── Dockerfile, compose.yaml, .dockerignore
+├── data/                   # Ciudaty CSVs
+├── prompts/system_prompt_v3.md
+├── evaluation/             # run_eval.py + eval_scenarios.csv
+├── tests/                  # unit tests
+└── src/realthor/
+    ├── config.py           # load_config, resolve_paths, load_prompt
+    ├── tools.py            # make_tools(demand, supply)
+    └── agent.py            # build_agent() + the click CLI
 ```
 
-## Committing Your Work
+## Local vs Deployed
+
+The same `analyze` command works in both runtimes:
 
 ```bash
-git add evaluation/evaluate.ipynb prompts/system_prompt_v3.md
-git commit -m "eval: implement evaluation suite and add system_prompt_v3"
-git log --oneline
+# Local
+uv run realthor analyze --region west --property-type apartment --bedrooms 2
+
+# Deployed (Docker — local only, not available in Udacity Workspace)
+docker compose run --rm realthor analyze --region west --property-type apartment --bedrooms 2
 ```
+
+Same interface, same flags. Only the runtime changes.
+
+## Docker Reference
+
+### Inspect
+
+```bash
+docker images              # list all images (including the realthor image built by ops.sh)
+docker ps -a               # list all containers (should be empty — --rm removes them on exit)
+docker system df           # disk usage: images, containers, volumes, build cache
+```
+
+### Clean up
+
+```bash
+# Remove dangling image layers and build cache (safe, targeted)
+docker system prune
+
+# Remove all images for this project (frees the most space)
+docker compose down --rmi all
+
+# Remove all unused images across all projects (more aggressive)
+docker system prune -a
+```
+
+> `docker compose run --rm` auto-removes containers on exit, so container accumulation is not a concern. The main source of disk growth after repeated `ops.sh` runs is dangling image layers from rebuilds — `docker system prune` cleans those.
+
+### Inspecting the container interactively
+
+By default, `docker compose run` executes the agent's `analyze` command. You can override that to open a shell instead — useful for checking that files were copied correctly, verifying the package is installed, or running one-off commands:
+
+```bash
+# Open a shell inside a fresh container
+docker compose run --rm -it realthor sh
+```
+
+The `-it` flags attach an interactive terminal. Once inside, the working directory is `/app` (set by `WORKDIR` in the Dockerfile):
+
+```bash
+# Inside the container
+ls /app                                   # verify project files were copied
+uv run realthor --help                    # confirm the CLI entry point works
+uv run python -c "import realthor"        # confirm the package is installed
+env | grep OPENAI                         # confirm the API key was injected
+exit
+```
+
+The container is removed on exit because of `--rm`. If you need to keep it running in the background to exec into it while it's active, drop `--rm` and use `docker compose exec` instead.
+
+### Secrets: local vs production
+
+Locally, `compose.yaml` reads `env_file: .env`, which injects the whole `.env` into the container: `LLM_PROVIDER` plus whichever provider key it selects (`OPENAI_API_KEY` or `VOCAREUM_API_KEY`). So `docker compose run` uses the same provider you set locally, Vocareum included, with no compose change. The `.dockerignore` file ensures `.env` is never copied into the image itself.
+
+In production, you replace `env_file` with your platform's secret injection mechanism — the app code stays the same:
+
+| Environment | How the secret reaches the container |
+|---|---|
+| Local (this exercise) | `env_file: .env` in `compose.yaml` |
+| Kubernetes | `secretKeyRef` in the pod spec |
+| AWS ECS | Secrets Manager ARN in the task definition |
+| HashiCorp Vault | Vault agent sidecar or SDK call at startup |
+
+The app reads whichever provider key `LLM_PROVIDER` selects, via `os.getenv`, in all cases; `load_dotenv()` falls back to environment variables automatically, so no code change is needed between environments.
+
+### Tagging images for a registry
+
+When you push an image to a registry (Docker Hub, ECR, GCR, etc.), `latest` is not enough — it gets overwritten every time you build. The production standard is to tag each image with the git commit SHA so you can trace exactly what code is running and roll back to any previous version.
+
+```bash
+# Get the short commit hash of the current HEAD
+GIT_SHA=$(git rev-parse --short HEAD)
+
+# Build and tag with both the commit hash and latest
+docker build -t realthor:$GIT_SHA -t realthor:latest .
+
+# Push both tags to a registry (replace with your registry URL)
+docker push myregistry/realthor:$GIT_SHA
+docker push myregistry/realthor:latest
+```
+
+With this approach, every image is permanently addressable by its commit. To run a specific past version:
+
+```bash
+# Pull and run the image from commit a3f9b12
+docker run --rm myregistry/realthor:a3f9b12 analyze --region west --property-type apartment --bedrooms 2
+```
+
+`latest` is convenient for local development and refers to whatever you built most recently. In production, always deploy by commit tag — it makes incidents easier to diagnose ("which version is running?") and rollbacks trivial ("redeploy the previous tag").
+
+When using `compose.yaml`, add an `image:` key to name the image that `docker compose build` produces, so you can tag it afterwards:
+
+```yaml
+services:
+  realthor:
+    build: .
+    image: realthor:latest   # names the image; docker tag realthor:latest realthor:$GIT_SHA
+    env_file: .env
+```
+
+## Commit
+
+```bash
+git add author/modules/03_deploy/exercises/solution/
+git commit -m "feat: deploy RealThor v0.3 as a packaged agent CLI"
+```
+
