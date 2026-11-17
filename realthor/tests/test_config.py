@@ -1,9 +1,6 @@
-"""Unit tests for realthor.config utilities."""
-
 import pathlib
 import pytest
 from realthor.config import load_config, load_prompt, resolve_paths
-
 
 CONFIG_PATH = str(pathlib.Path(__file__).parent.parent / "config.yaml")
 
@@ -13,6 +10,17 @@ def test_load_config_returns_dict():
     assert isinstance(cfg, dict)
     assert "model" in cfg
     assert "paths" in cfg
+
+
+def test_config_has_all_data_paths():
+    cfg = load_config(CONFIG_PATH)
+    required = {
+        "demand_data", "supply_data", "neighborhood_data", "velocity_data",
+        "listings_data", "supply_opportunities_data", "demand_leads_data",
+        "sales_data", "users_data",
+    }
+    missing = required - set(cfg["paths"].keys())
+    assert not missing, f"Missing config paths: {missing}"
 
 
 def test_resolve_paths_makes_absolute():
