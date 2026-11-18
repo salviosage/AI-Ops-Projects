@@ -1,5 +1,3 @@
-from __future__ import annotations
-
 import argparse
 import sys
 from pathlib import Path
@@ -7,7 +5,8 @@ from pathlib import Path
 import pandas as pd
 from langchain_core.messages import HumanMessage
 
-from realthor.agent import build_agent, _resolve_user
+from realthor.agents import build_main_agent
+from realthor.app import _resolve_user
 from realthor.config import load_config, resolve_paths
 
 CONFIG_PATH = str(Path(__file__).parent.parent / "config.yaml")
@@ -109,7 +108,7 @@ def run_eval(
         print(f"Running {len(scenarios)}/{len(df)} scenarios (sampled evenly by type)...")
 
     print("Loading agent...")
-    agent = build_agent(CONFIG_PATH)
+    agent = build_main_agent(cfg)
 
     failures = []
     print()
@@ -155,7 +154,7 @@ def run_eval(
 
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description="RealThor v0.4 evaluation")
+    parser = argparse.ArgumentParser(description="RealThor v0.5 evaluation")
     parser.add_argument("--complete", action="store_true", help="Run all scenarios")
     parser.add_argument("--baseline", help="Filter to a version_baseline (e.g. v02)")
     parser.add_argument("--type", dest="scenario_type", help="Filter by type (e.g. guardrail_input)")

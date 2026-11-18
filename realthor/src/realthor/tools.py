@@ -2,6 +2,7 @@ import pandas as pd
 from langchain.tools import tool, ToolRuntime
 
 from realthor.guardrails import UserContext
+from realthor.sandbox import run_sandboxed, validate_code
 
 
 def make_tools(
@@ -290,3 +291,55 @@ def make_tools(
         overwrite_csv,
         add_record,
     ]
+
+
+def make_execute_python_tool(cfg: dict):
+    """Build the execute_python tool, loading and pre-stripping sensitive columns."""
+    listings = pd.read_csv(cfg["paths"]["listings_data"]).drop(
+        columns=["seller_name", "seller_motivation"], errors="ignore"
+    )
+    supply_opps = pd.read_csv(cfg["paths"]["supply_opportunities_data"]).drop(
+        columns=["owner_contact", "internal_score", "acquisition_strategy"], errors="ignore"
+    )
+    demand_leads = pd.read_csv(cfg["paths"]["demand_leads_data"]).drop(
+        columns=["buyer_name", "credit_score_band", "pre_approval_status"], errors="ignore"
+    )
+    sales = pd.read_csv(cfg["paths"]["sales_data"]).drop(
+        columns=["commission_amount", "agent_performance_score"], errors="ignore"
+    )
+
+    dataframes = {
+        "listings": listings,
+        "supply_opportunities": supply_opps,
+        "demand_leads": demand_leads,
+        "sales": sales,
+    }
+
+    @tool
+    def execute_python(code: str) -> str:
+        """Run pandas analysis code against RealThor datasets.
+
+        Available DataFrames (already loaded, no imports needed):
+          - listings: listing_id, region, neighborhood, property_type, bedrooms,
+                      listing_type, asking_price, sqft, year_built, days_on_market, status
+          - supply_opportunities: supply_opportunity_id, region, property_type, bedrooms,
+                                  stage, estimated_value, listing_id
+          - demand_leads: lead_id, region, property_type, bedrooms, source, status, sale_id
+          - sales: sale_id, listing_id, lead_id, region, property_type, bedrooms,
+                   final_price, days_to_close, agent_id
+
+        Do not import pandas or any other module. Use print() for output.
+
+        Args:
+            code: Python code to execute. pandas (pd), math, and the DataFrames are
+                  pre-injected. No imports are allowed.
+        """
+        ok, reason = validate_code(code)
+        if not ok:
+            return f"BLOCKED: {reason}"
+        output, error = run_sandboxed(code, dataframes, timeout=cfg.get("sandbox", {}).get("timeout", 30))
+        if error:
+            return f"ERROR: {error}"
+        return output or "(no output)"
+
+    return execute_python

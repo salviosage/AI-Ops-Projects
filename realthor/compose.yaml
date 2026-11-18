@@ -1,7 +1,6 @@
 services:
   realthor:
     build: .
+    image: realthor:latest
     env_file: .env
-    volumes:
-      - ./outputs:/app/outputs
-    command: analyze --region west --property-type apartment --bedrooms 2
+    command: chat --user analyst_001 --message "What's the listing priority for west apartments?"

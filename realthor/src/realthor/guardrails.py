@@ -1,5 +1,3 @@
-from __future__ import annotations
-
 import json
 import re
 from dataclasses import dataclass
@@ -109,6 +107,14 @@ PROFANITY_OUTPUT_MARKERS = [
     "incompetent", "terrible brokers", "useless agents", "pathetic",
     "disgusting", "horrible performance", "worst ever",
     "stupid", "idiotic",
+]
+
+DATA_MUTATION_PATTERNS = [
+    r"\bdelete\b.*\b(listing|lead|record|row|csv|file|data)\b",
+    r"\bupdate\b.*\b(csv|file|listing|price|record)\b",
+    r"\boverwrite\b.*\b(csv|data|file)\b",
+    r"\bdrop\b.*\b(table|column|csv)\b",
+    r"\bremove\b.*\b(listing|record|file|csv)\b",
 ]
 
 SENSITIVE_FIELD_QUERY_TERMS = [
@@ -225,6 +231,18 @@ class InputGuardrails(AgentMiddleware):
                 "messages": [AIMessage(_blocked_response(
                     "sensitive_field_read",
                     "That field is restricted and cannot be queried directly.",
+                ))],
+                "jump_to": "end",
+            }
+
+        # data_mutation_instruction: datasets are read-only reference data;
+        # block instructions that try to modify or delete them via natural language.
+        if any(re.search(pattern, query) for pattern in DATA_MUTATION_PATTERNS):
+            return {
+                "messages": [AIMessage(_blocked_response(
+                    "data_mutation_instruction",
+                    "RealThor datasets are read-only. "
+                    "Modifications, deletions, and overwrites are not permitted.",
                 ))],
                 "jump_to": "end",
             }

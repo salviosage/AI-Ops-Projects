@@ -1,5 +1,3 @@
-from __future__ import annotations
-
 import sys
 from pathlib import Path
 
@@ -200,9 +198,9 @@ def check_users_composition():
 
 def check_eval_scenario_count():
     df = _load("eval_scenarios.csv", EVAL_DIR)
-    if len(df) != 80:
+    if len(df) != 90:
         raise DataValidationError(
-            f"eval_scenarios.csv: expected 80 rows, got {len(df)}\n{RESTORE_HINT}"
+            f"eval_scenarios.csv: expected 90 rows, got {len(df)}\n{RESTORE_HINT}"
         )
 
 
@@ -233,8 +231,9 @@ def check_eval_no_conflicting_scenarios():
 def check_eval_valid_column_values():
     df = _load("eval_scenarios.csv", EVAL_DIR)
     errors = []
-    valid_baselines = {"v02", "v03", "v04"}
-    valid_types = {"normal", "guardrail_input", "guardrail_tool", "guardrail_output"}
+    valid_baselines = {"v02", "v03", "v04", "v05"}
+    valid_types = {"normal", "guardrail_input", "guardrail_tool", "guardrail_output",
+                   "sandbox_allowed", "sandbox_denied"}
     valid_results = {"pass", "blocked"}
 
     bad_bl = df[~df["version_baseline"].isin(valid_baselines)]
