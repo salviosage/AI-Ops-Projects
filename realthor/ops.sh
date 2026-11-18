@@ -2,7 +2,11 @@
 set -e
 
 echo "=== Running unit tests ==="
-uv run pytest tests/ -v
+uv run pytest tests/test_config.py tests/test_tools.py tests/test_guardrails.py tests/test_sandbox.py -v
+
+echo ""
+echo "=== Checking data integrity ==="
+uv run pytest tests/test_data_integrity.py -v
 
 echo ""
 echo "=== Running evaluation ==="
@@ -14,7 +18,7 @@ docker compose build
 
 echo ""
 echo "=== Running deployed agent ==="
-docker compose run --rm realthor analyze --region west --property-type apartment --bedrooms 2
+docker compose run --rm realthor analyze --region west --property-type apartment --bedrooms 2 --user analyst_001
 
 echo ""
 echo "All checks passed."
