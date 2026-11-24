@@ -1,5 +1,18 @@
-acfa830 (HEAD -> dev) add test
-ee306c9 (origin/dev) add docker files
+07b160e (HEAD -> dev, origin/dev) add tests
+c666094 add human in the loop pipeline
+4fdc64b add tools and policies
+4834d2c add sandbox test
+f720341 add sandbox and its egent
+219ce6b add modules
+16ce593 add modules
+63bf375 add config file abd prompt for sandbox module
+04e2b9e add tests to cover the guardrails module
+519119c add guardrails to protect user agent and tools from unintended use or consequences
+11ce07b add mock data generators"
+5776284 add new data and tools for guardrails to work
+05a20ff updating the readme and logs
+acfa830 add test
+ee306c9 add docker files
 cab3f2b add reathor intelligent cli agent
 423fb1d click to build command line tool
 1cebba8 add reathor tools helper functions
