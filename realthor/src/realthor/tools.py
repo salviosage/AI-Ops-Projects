@@ -1,3 +1,5 @@
+import json
+from pathlib import Path
 import pandas as pd
 from langchain.tools import tool, ToolRuntime
 
@@ -13,8 +15,9 @@ def make_tools(
     supply_opportunities: pd.DataFrame,
     listings: pd.DataFrame,
     sales: pd.DataFrame,
+    cfg: dict | None = None,
 ) -> list:
-    """Build all fourteen tools, closing over the loaded DataFrames."""
+    """Build all fifteen tools, closing over the loaded DataFrames."""
     @tool
     def get_demand_signals(region: str, property_type: str, bedrooms: int) -> str:
         """Get demand signals for a real estate segment in Ciudaty.
@@ -252,6 +255,52 @@ def make_tools(
         return rows[safe_cols].to_string(index=False)
 
     # ------------------------------------------------------------------
+    #  channel recommendation (HITL policy applied by middleware)
+    # ------------------------------------------------------------------
+
+    channel_recommendations_path = (cfg or {}).get("paths", {}).get("channel_recommendations", "data/channel_recommendations.jsonl")
+
+    @tool
+    def submit_channel_recommendation(
+        opportunity_id: str,
+        channel: str,
+        notes: str,
+        runtime: ToolRuntime[UserContext],
+    ) -> str:
+        """Submit a channel recommendation for a supply opportunity.
+
+        For marketplace opportunities, executes immediately.
+        For high-value iBuyer opportunities, the HumanInTheLoopMiddleware will
+        pause execution before this tool runs and require operator approval.
+
+        Args:
+            opportunity_id: Supply opportunity ID (e.g., OPP-00015)
+            channel: Recommended channel ("marketplace" or "ibuyer")
+            notes: Rationale for the channel recommendation
+        """
+        ctx = runtime.context
+        row = supply_opportunities[supply_opportunities["supply_opportunity_id"] == opportunity_id]
+        if row.empty:
+            return json.dumps({"status": "error", "message": f"Opportunity {opportunity_id} not found."})
+
+        record = {
+            "opportunity_id": opportunity_id,
+            "channel": channel,
+            "recommended_by": ctx.user_id,
+            "notes": notes,
+        }
+        Path(channel_recommendations_path).parent.mkdir(parents=True, exist_ok=True)
+        with open(channel_recommendations_path, "a") as f:
+            f.write(json.dumps(record) + "\n")
+
+        return json.dumps({
+            "status": "success",
+            "opportunity_id": opportunity_id,
+            "channel": channel,
+            "message": f"Channel recommendation submitted for {opportunity_id}.",
+        })
+
+    # ------------------------------------------------------------------
     # mutation stubs (blocked by guardrail before body runs)
     # ------------------------------------------------------------------
 
@@ -286,6 +335,7 @@ def make_tools(
         get_supply_opportunities,
         get_listings,
         get_sales,
+        submit_channel_recommendation,
         update_asking_price,
         delete_lead,
         overwrite_csv,
