@@ -3,9 +3,14 @@ import re
 from dataclasses import dataclass
 from typing import Any, Callable
 
-from langchain.agents.middleware import AgentMiddleware, AgentState, hook_config
+import pandas as pd
+from langchain.agents.middleware import AgentMiddleware, AgentState, HumanInTheLoopMiddleware, hook_config
+from langchain.agents.middleware.human_in_the_loop import InterruptOnConfig
 from langchain_core.messages import AIMessage, ToolMessage
+from langgraph.prebuilt.tool_node import ToolCallRequest
 from langgraph.runtime import Runtime
+
+from realthor.policies import evaluate_channel_policy
 
 
 # ---------------------------------------------------------------------------
@@ -73,7 +78,7 @@ SENSITIVE_FIELDS = [
     "commission_amount", "agent_performance_score",
 ]
 
-ACTION_TOOLS = {"flag_segment_for_review", "create_segment_report"}
+ACTION_TOOLS = {"flag_segment_for_review", "create_segment_report", "submit_channel_recommendation"}
 
 MUTATION_TOOLS = {
     "update_listing", "delete_record", "overwrite_dataset", "add_record",
@@ -396,3 +401,44 @@ class OutputGuardrails(AgentMiddleware):
 def make_guardrails() -> list[AgentMiddleware]:
     """Return the three guardrail layers in order."""
     return [InputGuardrails(), ToolGuardrails(), OutputGuardrails()]
+
+
+# ---------------------------------------------------------------------------
+# HITL policy (conditional — only fires when policy requires it)
+# ---------------------------------------------------------------------------
+
+def _get_estimated_value(opp_id: str, opps_df: pd.DataFrame) -> float:
+    row = opps_df[opps_df["supply_opportunity_id"] == opp_id]
+    return float(row.iloc[0]["estimated_value"]) if not row.empty else 0.0
+
+
+def make_hitl_policy(cfg: dict) -> HumanInTheLoopMiddleware:
+    """Return HITL middleware that gates high-value iBuyer channel recommendations.
+
+    Unlike guardrails (which always block), this middleware is conditional:
+    the `when` predicate calls `evaluate_channel_policy()` and only fires
+    `interrupt()` when the policy returns `requires_approval=True`.
+    """
+    opps = pd.read_csv(cfg["paths"]["supply_opportunities_data"])
+    threshold = cfg["hitl"]["ibuyer_threshold"]
+
+    def _needs_approval(req: ToolCallRequest) -> bool:
+        channel = req.tool_call["args"].get("channel", "")
+        opp_id = req.tool_call["args"].get("opportunity_id", "")
+        estimated_value = _get_estimated_value(opp_id, opps)
+        decision = evaluate_channel_policy(
+            channel=channel,
+            estimated_value=estimated_value,
+            role=getattr(req.runtime.context, "role", "analyst"),
+            threshold=threshold,
+        )
+        return decision.requires_approval
+
+    return HumanInTheLoopMiddleware(
+        interrupt_on={
+            "submit_channel_recommendation": InterruptOnConfig(
+                allowed_decisions=["approve", "reject"],
+                when=_needs_approval,
+            ),
+        }
+    )

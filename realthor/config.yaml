@@ -1,6 +1,6 @@
 agent:
   name: RealThor
-  version: "0.5.0"
+  version: "0.6.0"
 
 model:
   name: gpt-4o-mini
@@ -9,8 +9,11 @@ model:
 sandbox:
   timeout: 30
 
+hitl:
+  ibuyer_threshold: 500000
+
 paths:
-  prompt: prompts/system_prompt_v5.md
+  prompt: prompts/system_prompt_v6.md
   analyst_prompt: prompts/analyst_prompt.md
   demand_data: data/demand_signals.csv
   supply_data: data/supply_snapshot.csv
@@ -21,6 +24,7 @@ paths:
   demand_leads_data: data/demand_leads.csv
   sales_data: data/sales.csv
   users_data: data/users.csv
+  channel_recommendations: data/channel_recommendations.jsonl
 
 evaluation:
   default_sample: 10

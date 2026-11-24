@@ -1,7 +1,10 @@
+import uuid
 import click
 import pandas as pd
 from dotenv import load_dotenv
 from langchain_core.messages import HumanMessage
+from langgraph.checkpoint.memory import InMemorySaver
+from langgraph.types import Command
 
 from realthor.agents import build_main_agent
 from realthor.config import load_config, resolve_paths
@@ -59,17 +62,47 @@ def analyze(region, property_type, bedrooms, user_id, config_path):
 @app.command()
 @click.option("--user", "-u", "user_id", default="", help="User ID resolved from users.csv")
 @click.option("--message", "-m", required=True, help="Free-text message to send to the agent")
+@click.option(
+    "--approval",
+    type=click.Choice(["approve", "reject"]),
+    default=None,
+    help="Pre-authorize (approve) or deny (reject) any pending HITL action.",
+)
 @click.option("--config", "config_path", default="config.yaml", show_default=True)
-def chat(user_id, message, config_path):
-    """Send a free-text message to the agent (all three guardrail layers active)."""
+def chat(user_id, message, approval, config_path):
+    """Send a free-text message to the agent (all guardrail layers + HITL policy active)."""
     click.echo("Loading agent...")
     cfg = resolve_paths(load_config(config_path), config_path)
     user_ctx = _resolve_user(user_id, cfg["paths"]["users_data"])
     click.echo(f"Identity: {user_ctx.user_id or 'guest'} ({user_ctx.role})")
-    agent = build_main_agent(cfg)
+
+    # InMemorySaver holds graph state across the pause/resume cycle.
+    # This is a required setup detail — covered in depth in a later module.
+    checkpointer = InMemorySaver()
+    agent = build_main_agent(cfg, checkpointer=checkpointer)
+    config = {"configurable": {"thread_id": str(uuid.uuid4())}}
+
     click.echo("Analyzing...")
     result = agent.invoke(
         {"messages": [HumanMessage(message)]},
+        config=config,
         context=user_ctx,
     )
+
+    if result.get("__interrupt__"):
+        pending = result["__interrupt__"][0].value
+        action = pending["action_requests"][0]
+        click.echo(f"\n[HITL] Pending approval: {action['name']}")
+        click.echo(f"[HITL] {action['description']}")
+        if approval is None:
+            click.echo("\nThis action requires operator approval.")
+            click.echo("Re-run with --approval approve or --approval reject.")
+            return
+        result = agent.invoke(
+            Command(resume={"decisions": [{"type": approval}]}),
+            config=config,
+            context=user_ctx,
+        )
+        click.echo(f"[HITL] Decision: {approval}")
+
     click.echo(result["messages"][-1].content)
