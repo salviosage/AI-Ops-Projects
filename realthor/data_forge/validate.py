@@ -198,9 +198,9 @@ def check_users_composition():
 
 def check_eval_scenario_count():
     df = _load("eval_scenarios.csv", EVAL_DIR)
-    if len(df) != 80:
+    if len(df) != 90:
         raise DataValidationError(
-            f"eval_scenarios.csv: expected 80 rows, got {len(df)}\n{RESTORE_HINT}"
+            f"eval_scenarios.csv: expected 90 rows, got {len(df)}\n{RESTORE_HINT}"
         )
 
 

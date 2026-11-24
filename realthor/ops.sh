@@ -2,7 +2,7 @@
 set -e
 
 echo "=== Running unit tests ==="
-uv run pytest tests/test_config.py tests/test_tools.py tests/test_guardrails.py tests/test_sandbox.py -v
+uv run pytest tests/test_config.py tests/test_tools.py tests/test_guardrails.py tests/test_sandbox.py tests/test_policies.py -v
 
 echo ""
 echo "=== Checking data integrity ==="
