@@ -159,7 +159,7 @@ def _redact_sensitive_fields(text: str) -> tuple[str, list[str]]:
 
 
 # ---------------------------------------------------------------------------
-# Layer 1 — Input guardrail
+# Input guardrail
 # ---------------------------------------------------------------------------
 
 class InputGuardrails(AgentMiddleware):
@@ -256,7 +256,7 @@ class InputGuardrails(AgentMiddleware):
 
 
 # ---------------------------------------------------------------------------
-# Layer 2 — Tool/access guardrail
+# Tool/access guardrail
 # ---------------------------------------------------------------------------
 
 class ToolGuardrails(AgentMiddleware):
@@ -342,7 +342,7 @@ class ToolGuardrails(AgentMiddleware):
 
 
 # ---------------------------------------------------------------------------
-# Layer 3 — Output guardrail
+# Output guardrail
 # ---------------------------------------------------------------------------
 
 class OutputGuardrails(AgentMiddleware):
