@@ -1,4 +1,5 @@
 import pathlib
+
 import pytest
 from realthor.config import load_config, load_prompt, resolve_paths
 

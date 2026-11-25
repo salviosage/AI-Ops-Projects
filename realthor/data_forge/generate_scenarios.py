@@ -380,6 +380,84 @@ def _build_guardrail_output():
     return rows
 
 
+def _build_normal_v07():
+    """5 regression scenarios for M07 — verify monitoring instrumentation didn't break queries."""
+    cases = [
+        ("MON001", "analyst_001", "west",   "apartment", 2,
+         "What's the listing priority for west/apartment/2?",
+         "high;prioritize_new_listings", ""),
+        ("MON002", "analyst_002", "north",  "",          "",
+         "How many active listings are in the north region?",
+         "north;active", ""),
+        ("MON003", "broker_west_001", "west", "studio",  1,
+         "What is the demand score for west/studio/1?",
+         "west;studio;0.69", ""),
+        ("MON004", "analyst_003", "south",  "",          "",
+         "Summarize supply opportunities in negotiation for south.",
+         "negotiation;south", ""),
+        ("MON005", "analyst_004", "east",   "apartment", 1,
+         "What is the velocity score for east/apartment/1?",
+         "east;apartment;0.62", ""),
+    ]
+    rows = []
+    for sid, uid, region, pt, beds, query, must_contain, must_not in cases:
+        rows.append({
+            "scenario_id": sid,
+            "version_baseline": "v07",
+            "type": "normal",
+            "user_id": uid,
+            "region": region,
+            "property_type": pt,
+            "bedrooms": beds,
+            "query_override": query,
+            "expected_result": "pass",
+            "expected_reason": "",
+            "must_contain": must_contain,
+            "must_not_contain": must_not,
+        })
+    return rows
+
+
+def _build_normal_v08():
+    """5 regression scenarios for M08 — verify the SqliteSaver swap and thread_id=run_id
+    wiring didn't change existing behavior. Replay itself reads from persisted state, so
+    these confirm the agent still answers correctly while every run is now checkpointed."""
+    cases = [
+        ("DBG001", "analyst_001", "north", "apartment", 2,
+         "What's the listing priority for north/apartment/2?",
+         "north;priority", ""),
+        ("DBG002", "analyst_002", "north", "", "",
+         "Should we acquire through iBuyer in north given supply and demand?",
+         "supply;demand", ""),
+        ("DBG003", "broker_west_001", "west", "studio", 1,
+         "What is the demand score for west/studio/1?",
+         "west;studio;0.69", ""),
+        ("DBG004", "analyst_003", "south", "", "",
+         "Recommend a channel for south apartments.",
+         "channel;south", ""),
+        ("DBG005", "analyst_004", "east", "apartment", 1,
+         "What is the velocity score for east/apartment/1?",
+         "east;apartment;0.62", ""),
+    ]
+    rows = []
+    for sid, uid, region, pt, beds, query, must_contain, must_not in cases:
+        rows.append({
+            "scenario_id": sid,
+            "version_baseline": "v08",
+            "type": "normal",
+            "user_id": uid,
+            "region": region,
+            "property_type": pt,
+            "bedrooms": beds,
+            "query_override": query,
+            "expected_result": "pass",
+            "expected_reason": "",
+            "must_contain": must_contain,
+            "must_not_contain": must_not,
+        })
+    return rows
+
+
 def main():
     DATA_DIR.mkdir(parents=True, exist_ok=True)
     EVAL_DIR.mkdir(parents=True, exist_ok=True)
@@ -393,6 +471,8 @@ def main():
         + _build_guardrail_input()
         + _build_guardrail_tool()
         + _build_guardrail_output()
+        + _build_normal_v07()
+        + _build_normal_v08()
     )
 
     df = pd.DataFrame(all_rows, columns=[
