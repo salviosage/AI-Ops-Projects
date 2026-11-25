@@ -16,6 +16,7 @@ from realthor.config import load_config, resolve_paths
 from realthor.guardrails import GUEST_CONTEXT, UserContext
 from realthor.monitor import RunRecord, compute_metrics, generate_report, load_run_records
 from realthor.replay import build_checkpointer, format_report, reconstruct_context
+from realthor.tracing import build_tracer, flush_tracer
 
 load_dotenv()
 
@@ -117,11 +118,18 @@ def app():
 @click.option("--property-type", "property_type", required=True, help="apartment, house, or studio")
 @click.option("--bedrooms", required=True, type=int, help="Number of bedrooms")
 @click.option("--user", "user_id", default="", help="User ID resolved from users.csv")
+@click.option(
+    "--trace/--no-trace",
+    default=None,
+    help="Emit a Langfuse trace for this run (overrides config.tracing.enabled).",
+)
 @click.option("--config", "config_path", default="config.yaml", show_default=True)
-def analyze(region, property_type, bedrooms, user_id, config_path):
+def analyze(region, property_type, bedrooms, user_id, trace, config_path):
     """Analyze listing priority for one region/property profile."""
     click.echo("Loading agent...")
     cfg = resolve_paths(load_config(config_path), config_path)
+    if trace is not None:
+        cfg = {**cfg, "tracing": {**cfg.get("tracing", {}), "enabled": trace}}
     user_ctx = _resolve_user(user_id, cfg["paths"]["users_data"])
     click.echo(f"Identity: {user_ctx.user_id or 'guest'} ({user_ctx.role})")
 
@@ -139,6 +147,10 @@ def analyze(region, property_type, bedrooms, user_id, config_path):
 
     timestamp = datetime.now(timezone.utc).isoformat()
     callback = UsageMetadataCallbackHandler()
+    tracer = build_tracer(cfg)
+    callbacks = [callback] + ([tracer] if tracer else [])
+    # Tag the trace so RealThor's runs are easy to find and filter in Langfuse.
+    trace_meta = {"metadata": {"langfuse_tags": ["analyze"]}} if tracer else {}
     t0 = time.perf_counter()
     result = None
     success = True
@@ -146,7 +158,7 @@ def analyze(region, property_type, bedrooms, user_id, config_path):
     try:
         result = agent.invoke(
             {"messages": [HumanMessage(question)]},
-            config={**thread_config, "callbacks": [callback]},
+            config={**thread_config, "callbacks": callbacks, **trace_meta},
             context=user_ctx,
         )
         click.echo(result["messages"][-1].content)
@@ -156,6 +168,7 @@ def analyze(region, property_type, bedrooms, user_id, config_path):
         click.echo(f"Error: {failure_reason}", err=True)
     finally:
         latency_s = time.perf_counter() - t0
+        flush_tracer(tracer)
         input_tokens, output_tokens = _extract_token_usage(callback, cfg["model"]["name"])
         record = _build_run_record(
             run_id=run_id,
@@ -173,6 +186,8 @@ def analyze(region, property_type, bedrooms, user_id, config_path):
         )
         _log_run(cfg, record)
         click.echo(f"\nRun ID: {run_id}  (replay with: realthor replay --run-id {run_id})")
+        if tracer:
+            click.echo("Trace sent to Langfuse — open your project to inspect the run.")
 
 
 @app.command()
@@ -184,11 +199,18 @@ def analyze(region, property_type, bedrooms, user_id, config_path):
     default=None,
     help="Pre-authorize (approve) or deny (reject) any pending HITL action.",
 )
+@click.option(
+    "--trace/--no-trace",
+    default=None,
+    help="Emit a Langfuse trace for this run (overrides config.tracing.enabled).",
+)
 @click.option("--config", "config_path", default="config.yaml", show_default=True)
-def chat(user_id, message, approval, config_path):
+def chat(user_id, message, approval, trace, config_path):
     """Send a free-text message to the agent (all guardrail layers + HITL policy active)."""
     click.echo("Loading agent...")
     cfg = resolve_paths(load_config(config_path), config_path)
+    if trace is not None:
+        cfg = {**cfg, "tracing": {**cfg.get("tracing", {}), "enabled": trace}}
     user_ctx = _resolve_user(user_id, cfg["paths"]["users_data"])
     click.echo(f"Identity: {user_ctx.user_id or 'guest'} ({user_ctx.role})")
 
@@ -202,6 +224,10 @@ def chat(user_id, message, approval, config_path):
 
     timestamp = datetime.now(timezone.utc).isoformat()
     callback = UsageMetadataCallbackHandler()
+    tracer = build_tracer(cfg)
+    callbacks = [callback] + ([tracer] if tracer else [])
+    # Tag the trace so RealThor's runs are easy to find and filter in Langfuse.
+    trace_meta = {"metadata": {"langfuse_tags": ["chat"]}} if tracer else {}
     t0 = time.perf_counter()
     result = None
     success = True
@@ -212,7 +238,7 @@ def chat(user_id, message, approval, config_path):
     try:
         result = agent.invoke(
             {"messages": [HumanMessage(message)]},
-            config={**config, "callbacks": [callback]},
+            config={**config, "callbacks": callbacks, **trace_meta},
             context=user_ctx,
         )
 
@@ -228,7 +254,7 @@ def chat(user_id, message, approval, config_path):
             else:
                 result = agent.invoke(
                     Command(resume={"decisions": [{"type": approval}]}),
-                    config={**config, "callbacks": [callback]},
+                    config={**config, "callbacks": callbacks, **trace_meta},
                     context=user_ctx,
                 )
                 hitl_decision = "approved" if approval == "approve" else "rejected"
@@ -242,6 +268,7 @@ def chat(user_id, message, approval, config_path):
         click.echo(f"Error: {failure_reason}", err=True)
     finally:
         latency_s = time.perf_counter() - t0
+        flush_tracer(tracer)
         input_tokens, output_tokens = _extract_token_usage(callback, cfg["model"]["name"])
         record = _build_run_record(
             run_id=run_id,
@@ -260,6 +287,8 @@ def chat(user_id, message, approval, config_path):
         )
         _log_run(cfg, record)
         click.echo(f"\nRun ID: {run_id}  (replay with: realthor replay --run-id {run_id})")
+        if tracer:
+            click.echo("Trace sent to Langfuse — open your project to inspect the run.")
 
 
 @app.command()
