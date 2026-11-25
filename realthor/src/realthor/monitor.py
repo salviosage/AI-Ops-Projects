@@ -22,6 +22,8 @@ class RunRecord:
     guardrail_blocked: bool
     guardrail_reason: str
     hitl_decision: str
+    prompt_version: str = ""
+    dataset_version: str = ""
 
 
 @dataclasses.dataclass

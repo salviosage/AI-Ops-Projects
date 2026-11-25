@@ -1,6 +1,6 @@
 agent:
   name: RealThor
-  version: "0.7.0"
+  version: "0.8.0"
 
 model:
   name: gpt-4o-mini
@@ -12,8 +12,11 @@ sandbox:
 hitl:
   ibuyer_threshold: 500000
 
+debug:
+  state_db: state.db
+
 paths:
-  prompt: prompts/system_prompt_v7.md
+  prompt: prompts/system_prompt_v8.md
   analyst_prompt: prompts/analyst_prompt.md
   demand_data: data/demand_signals.csv
   supply_data: data/supply_snapshot.csv

@@ -9,13 +9,13 @@ import pandas as pd
 from dotenv import load_dotenv
 from langchain_core.callbacks import UsageMetadataCallbackHandler
 from langchain_core.messages import AIMessage, HumanMessage, ToolMessage
-from langgraph.checkpoint.memory import InMemorySaver
 from langgraph.types import Command
 
 from realthor.agents import build_main_agent
 from realthor.config import load_config, resolve_paths
 from realthor.guardrails import GUEST_CONTEXT, UserContext
 from realthor.monitor import RunRecord, compute_metrics, generate_report, load_run_records
+from realthor.replay import build_checkpointer, format_report, reconstruct_context
 
 load_dotenv()
 
@@ -94,6 +94,8 @@ def _build_run_record(
         guardrail_blocked=guardrail_blocked,
         guardrail_reason=guardrail_reason,
         hitl_decision=hitl_decision,
+        prompt_version=Path(cfg["paths"]["prompt"]).name,
+        dataset_version=cfg["agent"]["version"],
     )
 
 
@@ -122,14 +124,19 @@ def analyze(region, property_type, bedrooms, user_id, config_path):
     cfg = resolve_paths(load_config(config_path), config_path)
     user_ctx = _resolve_user(user_id, cfg["paths"]["users_data"])
     click.echo(f"Identity: {user_ctx.user_id or 'guest'} ({user_ctx.role})")
-    agent = build_main_agent(cfg)
+
+    # Persist run state to SqliteSaver, keyed by run_id, so the run can be
+    # replayed after the process exits.
+    run_id = str(uuid.uuid4())
+    checkpointer = build_checkpointer(cfg)
+    agent = build_main_agent(cfg, checkpointer=checkpointer)
+    thread_config = {"configurable": {"thread_id": run_id}}
     question = (
         f"What's the listing priority for {bedrooms}-bedroom "
         f"{property_type} in the {region} region?"
     )
     click.echo("Analyzing...")
 
-    run_id = str(uuid.uuid4())
     timestamp = datetime.now(timezone.utc).isoformat()
     callback = UsageMetadataCallbackHandler()
     t0 = time.perf_counter()
@@ -139,7 +146,7 @@ def analyze(region, property_type, bedrooms, user_id, config_path):
     try:
         result = agent.invoke(
             {"messages": [HumanMessage(question)]},
-            config={"callbacks": [callback]},
+            config={**thread_config, "callbacks": [callback]},
             context=user_ctx,
         )
         click.echo(result["messages"][-1].content)
@@ -165,6 +172,7 @@ def analyze(region, property_type, bedrooms, user_id, config_path):
             cfg=cfg,
         )
         _log_run(cfg, record)
+        click.echo(f"\nRun ID: {run_id}  (replay with: realthor replay --run-id {run_id})")
 
 
 @app.command()
@@ -184,13 +192,14 @@ def chat(user_id, message, approval, config_path):
     user_ctx = _resolve_user(user_id, cfg["paths"]["users_data"])
     click.echo(f"Identity: {user_ctx.user_id or 'guest'} ({user_ctx.role})")
 
-    # InMemorySaver holds graph state across the pause/resume cycle.
-    # This is a required setup detail — covered in depth in a later module.
-    checkpointer = InMemorySaver()
-    agent = build_main_agent(cfg, checkpointer=checkpointer)
-    config = {"configurable": {"thread_id": str(uuid.uuid4())}}
-
+    # SqliteSaver persists graph state to disk, keyed by thread_id. Using the
+    # run_id as the thread_id ties the durable checkpoints to the log record, so
+    # the run can be replayed and reconstructed after the process exits.
     run_id = str(uuid.uuid4())
+    checkpointer = build_checkpointer(cfg)
+    agent = build_main_agent(cfg, checkpointer=checkpointer)
+    config = {"configurable": {"thread_id": run_id}}
+
     timestamp = datetime.now(timezone.utc).isoformat()
     callback = UsageMetadataCallbackHandler()
     t0 = time.perf_counter()
@@ -250,30 +259,16 @@ def chat(user_id, message, approval, config_path):
             hitl_decision=hitl_decision,
         )
         _log_run(cfg, record)
+        click.echo(f"\nRun ID: {run_id}  (replay with: realthor replay --run-id {run_id})")
 
 
 @app.command()
-@click.option(
-    "--seed",
-    is_flag=True,
-    help="Load a representative week of prior runs from seed_runs.jsonl into an empty log, "
-    "so the report shows the Key Signals firing. Only seeds when the log is empty.",
-)
 @click.option("--config", "config_path", default="config.yaml", show_default=True)
-def report(config_path, seed):
+def report(config_path):
     """Generate a monitoring report from logs/runs.jsonl."""
     cfg = resolve_paths(load_config(config_path), config_path)
     log_path = Path(cfg["logging"]["log_dir"]) / "runs.jsonl"
     output_dir = Path(cfg["logging"]["reports_dir"])
-    if seed:
-        seed_path = Path(__file__).resolve().parents[2] / "seed_runs.jsonl"
-        if log_path.exists():
-            click.echo(f"{log_path} already present — not re-seeding.")
-        else:
-            log_path.parent.mkdir(parents=True, exist_ok=True)
-            log_path.write_text(seed_path.read_text())
-            n = sum(1 for _ in open(seed_path))
-            click.echo(f"Loaded {n} prior runs from seed_runs.jsonl.")
     records = load_run_records(log_path)
     if not records:
         click.echo(f"No run records found at {log_path}")
@@ -281,3 +276,15 @@ def report(config_path, seed):
     metrics = compute_metrics(records)
     generate_report(metrics, output_dir)
     click.echo(f"Report written to {output_dir / 'monitoring_report.md'}")
+
+
+@app.command()
+@click.option("--run-id", "run_id", required=True, help="run_id of a past run to reconstruct")
+@click.option("--config", "config_path", default="config.yaml", show_default=True)
+def replay(run_id, config_path):
+    """Reconstruct a past run's execution context from persisted checkpoints + logs."""
+    cfg = resolve_paths(load_config(config_path), config_path)
+    log_path = Path(cfg["logging"]["log_dir"]) / "runs.jsonl"
+    checkpointer = build_checkpointer(cfg)
+    ctx = reconstruct_context(run_id, checkpointer, log_path)
+    click.echo(format_report(ctx))
