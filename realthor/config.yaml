@@ -1,6 +1,6 @@
 agent:
   name: RealThor
-  version: "0.9.0"
+  version: "0.10.0"
 
 model:
   name: gpt-4o-mini
@@ -13,13 +13,14 @@ hitl:
   ibuyer_threshold: 500000
 
 debug:
-  state_db: state.db
+  state_db: state.db      # LangGraph checkpointer — agent state, keyed by thread_id
 
 tracing:
   enabled: true
 
 paths:
-  prompt: prompts/system_prompt_v9.md
+  prompt: prompts/system_prompt_v10.md
+  app_db: realthor.db     # application state — users + sessions
   analyst_prompt: prompts/analyst_prompt.md
   demand_data: data/demand_signals.csv
   supply_data: data/supply_snapshot.csv

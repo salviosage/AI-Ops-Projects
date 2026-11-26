@@ -91,7 +91,12 @@ def reconstruct_context(run_id: str, checkpointer: SqliteSaver, log_path: Path) 
             if text:
                 ctx.final_output = text
 
-    record = next((r for r in load_run_records(log_path) if r.run_id == run_id), None)
+    # Pick the most recent record for this run_id. In interactive mode a session
+    # keeps one thread_id across turns (== run_id), so several turns log under the
+    # same run_id; the latest record is the one consistent with the restored state.
+    record = next(
+        (r for r in reversed(load_run_records(log_path)) if r.run_id == run_id), None
+    )
     if record is not None:
         ctx.input_text = record.input_text
         ctx.prompt_version = record.prompt_version

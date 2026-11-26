@@ -1,6 +1,6 @@
 import pandas as pd
 from langchain.agents import create_agent
-from langchain_core.tools import tool
+from langchain.tools import ToolRuntime, tool
 
 from realthor.config import load_prompt, make_chat_model
 from realthor.guardrails import UserContext, make_guardrails, make_hitl_policy
@@ -12,7 +12,14 @@ def build_analyst_agent(cfg: dict):
     model = make_chat_model(cfg)
     analyst_prompt = load_prompt(cfg["paths"]["analyst_prompt"])
     tools = [make_execute_python_tool(cfg)]
-    return create_agent(model=model, tools=tools, system_prompt=analyst_prompt)
+    # The sub-agent carries the same identity context as the main agent, so a
+    # delegated analysis stays scoped to the caller.
+    return create_agent(
+        model=model,
+        tools=tools,
+        system_prompt=analyst_prompt,
+        context_schema=UserContext,
+    )
 
 
 def build_main_agent(cfg: dict, checkpointer=None):
@@ -22,10 +29,16 @@ def build_main_agent(cfg: dict, checkpointer=None):
     analyst = build_analyst_agent(cfg)
 
     @tool
-    def analyze_data(question: str) -> str:
+    def analyze_data(question: str, runtime: ToolRuntime[UserContext]) -> str:
         """Delegate analytical queries requiring filtering or aggregation of raw listing data —
         percentages, averages, rankings, counts that span many rows."""
-        result = analyst.invoke({"messages": [{"role": "user", "content": question}]})
+        # Propagate the caller's identity across the agent boundary: the sub-agent
+        # runs under the same context, so a delegated analysis can never widen the
+        # caller's scope. Context must be threaded through every hop, not just the top.
+        result = analyst.invoke(
+            {"messages": [{"role": "user", "content": question}]},
+            context=runtime.context,
+        )
         return result["messages"][-1].content
 
     demand = pd.read_csv(cfg["paths"]["demand_data"])
